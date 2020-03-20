@@ -20,14 +20,14 @@ module DistributeReads
         max_lag = options[:max_lag]
         if max_lag && !options[:primary]
           Array(options[:lag_on] || [ActiveRecord::Base]).each do |base_model|
-            if DistributeReads.lag(connection: base_model.connection) > max_lag
-              message = "Replica lag #{lag} over app requested #{max_lag} seconds#{options[:lag_on] ? " on #{base_model.name} connection" : ""}"
+            if (lag = DistributeReads.lag(connection: base_model.connection)) > max_lag
+              message = "Replica lag #{lag} over app requested #{max_lag} seconds on #{base_model.name} connection."
 
               if options[:lag_failover]
                 # TODO possibly per connection
                 Thread.current[:distribute_reads][:primary] = true
                 Thread.current[:distribute_reads][:replica] = false
-                DistributeReads.log "#{message}. Falling back to master pool."
+                DistributeReads.log "#{message} Falling back to master pool for all databases."
                 break
               else
                 raise DistributeReads::TooMuchLag, message
