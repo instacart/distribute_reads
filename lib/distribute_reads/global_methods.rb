@@ -1,5 +1,9 @@
 module DistributeReads
   module GlobalMethods
+
+    SUPPRESS_REPORTING = !!ENV["DISTRIBUTE_READS_NO_REPORT_LAG"]
+    private_constant :SUPPRESS_REPORTING
+
     def distribute_reads(**options)
       raise ArgumentError, "Missing block" unless block_given?
 
@@ -35,7 +39,7 @@ module DistributeReads
                 elsif !current_lag
                   "No replicas available for lag check"
                 else
-                  "Replica lag over #{max_lag} seconds"
+                  "Replica lag #{current_lag} over #{max_lag} seconds"
                 end
 
               message = "#{message} on #{base_model.name} connection" if options[:lag_on]
@@ -44,9 +48,11 @@ module DistributeReads
                 # TODO possibly per connection
                 Thread.current[:distribute_reads][:primary] = true
                 Thread.current[:distribute_reads][:replica] = false
-                DistributeReads.log "#{message}. Falling back to master pool."
+                DistributeReads.log "#{message} Falling back to master pool for all databases."
+                report_lag("distribute_reads.lag_failover", current_lag, base_model.name)
                 break
               else
+                report_lag("distribute_reads.lag_error", current_lag, base_model.name)
                 raise DistributeReads::TooMuchLag, message
               end
             end
@@ -65,6 +71,11 @@ module DistributeReads
       ensure
         Thread.current[:distribute_reads] = previous_value
       end
+    end
+
+    def report_lag(message, lag, model_name)
+      # TODO: distribute_reads gem shouldn't depend on ICMetrics directly. This is quick fix due to load (3/21/2020)
+      ICMetrics.event(message, lag, model: model_name) unless SUPPRESS_REPORTING
     end
   end
 end
